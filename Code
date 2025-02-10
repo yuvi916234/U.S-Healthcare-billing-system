@@ -1,0 +1,104 @@
+## Create the database
+CREATE DATABASE HealthcareBilling;
+USE HealthcareBilling;
+## Patient Table
+CREATE TABLE Patient (
+    PatientID INT PRIMARY KEY AUTO_INCREMENT,
+    FirstName VARCHAR(50),
+    LastName VARCHAR(50),
+    DateOfBirth DATE,
+    InsuranceProvider VARCHAR(100),
+    InsurancePolicyNumber VARCHAR(50),
+    Address VARCHAR(255),
+    PhoneNumber VARCHAR(15)
+);
+## Provider Table
+CREATE TABLE Provider (
+    ProviderID INT PRIMARY KEY AUTO_INCREMENT,
+    ProviderName VARCHAR(100),
+    ContactInfo VARCHAR(255)
+);
+## Procedure Table
+CREATE TABLE ProcedureCode (
+    ProcedureCode VARCHAR(10) PRIMARY KEY,
+    ProcedureDescription VARCHAR(255),
+    ChargeAmount DECIMAL(10,2)
+);
+## Appointment Table
+CREATE TABLE Appointment (
+    AppointmentID INT PRIMARY KEY AUTO_INCREMENT,
+    PatientID INT,
+    DateOfAppointment DATE,
+    ProviderID INT,
+    ProcedureCode VARCHAR(10),
+    DiagnosisCode VARCHAR(10),
+    FOREIGN KEY (PatientID) REFERENCES Patient(PatientID),
+    FOREIGN KEY (ProviderID) REFERENCES Provider(ProviderID),
+    FOREIGN KEY (ProcedureCode) REFERENCES ProcedureCode(ProcedureCode)
+);
+## Claim Table
+CREATE TABLE Claim (
+    ClaimID INT PRIMARY KEY AUTO_INCREMENT,
+    PatientID INT,
+    AppointmentID INT,
+    ClaimStatus ENUM('Pending', 'Rejected', 'Paid'),
+    SubmissionDate DATE,
+    PaymentAmount DECIMAL(10,2),
+    InsuranceProvider VARCHAR(100),
+    FOREIGN KEY (PatientID) REFERENCES Patient(PatientID),
+    FOREIGN KEY (AppointmentID) REFERENCES Appointment(AppointmentID)
+);
+## Insert Sample Data
+INSERT INTO Patient (FirstName, LastName, DateOfBirth, InsuranceProvider, InsurancePolicyNumber, Address, PhoneNumber)
+VALUES ('John', 'Doe', '1980-05-15', 'Blue Cross', 'BC123456', '123 Main St, NY', '555-1234');
+INSERT INTO Provider (ProviderName, ContactInfo)
+VALUES ('Dr. Smith', 'dr.smith@hospital.com');
+INSERT INTO ProcedureCode (ProcedureCode, ProcedureDescription, ChargeAmount)
+VALUES ('99213', 'Office Visit - Moderate', 150.00);
+INSERT INTO Appointment (PatientID, DateOfAppointment, ProviderID, ProcedureCode, DiagnosisCode)
+VALUES (1, '2025-02-01', 1, '99213', 'J20.9');
+INSERT INTO Claim (PatientID, AppointmentID, ClaimStatus, SubmissionDate, PaymentAmount, InsuranceProvider)
+VALUES (1, 1, 'Pending', '2025-02-02', NULL, 'Blue Cross');
+## Queries for Analysis
+## Retrieve patient details based on insurance provider
+SELECT * FROM Patient WHERE InsuranceProvider = 'Blue Cross';
+## Calculate total charges per patient
+SELECT P.PatientID, P.FirstName, P.LastName, SUM(PC.ChargeAmount) AS TotalCharges
+FROM Appointment A
+JOIN Patient P ON A.PatientID = P.PatientID
+JOIN ProcedureCode PC ON A.ProcedureCode = PC.ProcedureCode
+GROUP BY P.PatientID;
+## Analyze claim rejection rates by diagnosis code
+SELECT A.DiagnosisCode, COUNT(C.ClaimID) AS TotalClaims, 
+       SUM(CASE WHEN C.ClaimStatus = 'Rejected' THEN 1 ELSE 0 END) AS RejectedClaims,
+       (SUM(CASE WHEN C.ClaimStatus = 'Rejected' THEN 1 ELSE 0 END) / COUNT(C.ClaimID)) * 100 AS RejectionRate
+FROM Claim C
+JOIN Appointment A ON C.AppointmentID = A.AppointmentID
+GROUP BY A.DiagnosisCode;
+## Find average claim processing time per insurance provider
+SELECT InsuranceProvider, AVG(DATEDIFF(NOW(), SubmissionDate)) AS AvgProcessingTime
+FROM Claim WHERE ClaimStatus = 'Paid'
+GROUP BY InsuranceProvider;
+## Create Views
+CREATE VIEW PatientBilling AS
+SELECT P.PatientID, P.FirstName, P.LastName, C.ClaimStatus, C.PaymentAmount
+FROM Patient P
+JOIN Claim C ON P.PatientID = C.PatientID;
+## Create Stored Procedure
+DELIMITER $$
+CREATE PROCEDURE GetPatientClaims(IN patientID INT)
+BEGIN
+    SELECT * FROM Claim WHERE PatientID = patientID;
+END $$
+DELIMITER ;
+## Create Trigger
+DELIMITER $$
+CREATE TRIGGER BeforeClaimInsert
+BEFORE INSERT ON Claim
+FOR EACH ROW
+BEGIN
+    IF NEW.PaymentAmount < 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Payment amount cannot be negative';
+    END IF;
+END $$
+DELIMITER ;
